@@ -34,6 +34,11 @@ const Location = mongoose.model('Location', locationSchema);
 app.post('/api/location', async (req, res) => {
   const { busNumber, latitude, longitude, speed, heading, timestamp } = req.body;
 
+  // Convert speed from m/s to km/h
+  if (speed) {
+    speed = speed * 3.6;
+  }
+  
   try {
     const updatedLocation = await Location.findOneAndUpdate(
       { busNumber }, // Match by busNumber
