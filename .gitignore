@@ -11,3 +11,7 @@ server/node_modules/
 # Logs
 *.log
 .vercel
+/node_modules
+npm-debug.log
+.DS_Store
+/*.env
