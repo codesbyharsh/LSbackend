@@ -2,7 +2,7 @@ const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
 require('dotenv').config();
-const crypto = require('crypto'); 
+
 const app = express();
 const PORT = process.env.PORT || 5000;
 
@@ -11,7 +11,8 @@ app.use(cors());
 app.use(express.json());
 
 // Connect to MongoDB
-mongoose.connect(process.env.MONGODB_URI)
+mongoose
+  .connect(process.env.MONGODB_URI, { useNewUrlParser: true, useUnifiedTopology: true })
   .then(() => {
     console.log('Connected to MongoDB');
     // Seed the bus numbers after connection
@@ -31,7 +32,7 @@ const busSchema = new mongoose.Schema({
 
 const Bus = mongoose.model('Bus', busSchema);
 
-// Location schema (unchanged)
+// Location schema
 const locationSchema = new mongoose.Schema({
   busNumber: { type: String, required: true },
   deviceId: { type: Number, required: true },
@@ -48,16 +49,22 @@ const locationSchema = new mongoose.Schema({
   direction_id: { type: Number, enum: [0, 1], default: 0 },
   occupancy_status: { 
     type: String, 
-    enum: ['EMPTY', 'MANY_SEATS_AVAILABLE', 'FEW_SEATS_AVAILABLE', 'STANDING_ROOM_ONLY', 'CRUSHED_STANDING_ROOM_ONLY', 'FULL', 'NOT_ACCEPTING_PASSENGERS', 'NO_DATA_AVAILABLE'], 
+    enum: [
+      'EMPTY',
+      'MANY_SEATS_AVAILABLE',
+      'FEW_SEATS_AVAILABLE',
+      'STANDING_ROOM_ONLY',
+      'CRUSHED_STANDING_ROOM_ONLY',
+      'FULL',
+      'NOT_ACCEPTING_PASSENGERS',
+      'NO_DATA_AVAILABLE'
+    ],
     default: 'NO_DATA_AVAILABLE' 
   },
   occupancy_percentage: { type: Number, default: 0 }
 });
 
 const Location = mongoose.model('Location', locationSchema);
-
-// In-memory counter for device assignment (for demonstration only)
-let nextDeviceId = 1;
 
 // --- Seed Bus Numbers if Collection is Empty ---
 const initialBusNumbers = [
@@ -76,7 +83,6 @@ async function seedBusNumbers() {
     console.error("Error seeding bus collection", err);
   }
 }
-
 
 // --- API Endpoints ---
 
@@ -111,17 +117,14 @@ app.post('/api/register', async (req, res) => {
 
     // Get all assigned device IDs
     const assignedDevices = await Bus.find({ assigned: true }).distinct('deviceId');
-
-    // Generate a random device ID between 1 and 100 that is not already assigned
-    let assignedDeviceId;
-    const availableDeviceIds = Array.from({ length: 100 }, (_, i) => i + 1).filter(id => !assignedDevices.includes(id));
+    const availableDeviceIds = Array.from({ length: 100 }, (_, i) => i + 1)
+      .filter(id => !assignedDevices.some(a => Number(a) === id));
 
     if (availableDeviceIds.length === 0) {
       return res.status(400).json({ message: 'No available device IDs' });
     }
 
-    assignedDeviceId = availableDeviceIds[Math.floor(Math.random() * availableDeviceIds.length)];
-
+    const assignedDeviceId = availableDeviceIds[Math.floor(Math.random() * availableDeviceIds.length)];
     bus.assigned = true;
     bus.deviceId = assignedDeviceId;
     bus.username = username;
@@ -133,8 +136,6 @@ app.post('/api/register', async (req, res) => {
     res.status(500).json({ message: 'Registration failed.' });
   }
 });
-
-
 
 // Login endpoint: expects { username } and returns configuration (username, busNumber, deviceId)
 app.post('/api/login', async (req, res) => {
@@ -154,15 +155,13 @@ app.post('/api/login', async (req, res) => {
   }
 });
 
-// API endpoint to update location (unchanged)
+// API endpoint to update location
 app.post('/api/location', async (req, res) => {
   const { busNumber, deviceId, latitude, longitude, altitude, accuracy, speed, heading, timestamp } = req.body;
   if (!busNumber || !deviceId || latitude === undefined || longitude === undefined || !timestamp) {
     return res.status(400).json({ message: 'Missing required fields' });
   }
-
   const status = speed && speed > 0 ? 'moving' : 'stopped';
-
   try {
     const updatedLocation = await Location.findOneAndUpdate(
       { busNumber },
