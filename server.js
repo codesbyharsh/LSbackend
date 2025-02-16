@@ -2,7 +2,7 @@ const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
 require('dotenv').config();
-
+const crypto = require('crypto'); 
 const app = express();
 const PORT = process.env.PORT || 5000;
 
@@ -108,7 +108,20 @@ app.post('/api/register', async (req, res) => {
     if (bus.assigned) {
       return res.status(400).json({ message: 'Bus number already configured' });
     }
-    const assignedDeviceId = nextDeviceId++;
+
+    // Get all assigned device IDs
+    const assignedDevices = await Bus.find({ assigned: true }).distinct('deviceId');
+
+    // Generate a random device ID between 1 and 100 that is not already assigned
+    let assignedDeviceId;
+    const availableDeviceIds = Array.from({ length: 100 }, (_, i) => i + 1).filter(id => !assignedDevices.includes(id));
+
+    if (availableDeviceIds.length === 0) {
+      return res.status(400).json({ message: 'No available device IDs' });
+    }
+
+    assignedDeviceId = availableDeviceIds[Math.floor(Math.random() * availableDeviceIds.length)];
+
     bus.assigned = true;
     bus.deviceId = assignedDeviceId;
     bus.username = username;
@@ -120,6 +133,8 @@ app.post('/api/register', async (req, res) => {
     res.status(500).json({ message: 'Registration failed.' });
   }
 });
+
+
 
 // Login endpoint: expects { username } and returns configuration (username, busNumber, deviceId)
 app.post('/api/login', async (req, res) => {
