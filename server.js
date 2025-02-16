@@ -163,11 +163,6 @@ app.post('/api/location', async (req, res) => {
 
   const status = speed && speed > 0 ? 'moving' : 'stopped';
 
-  // Convert speed from m/s to km/h
-  if (speed) {
-    speed = speed * 3.6;
-  }
-  
   try {
     const updatedLocation = await Location.findOneAndUpdate(
       { busNumber },
