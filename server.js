@@ -1,11 +1,15 @@
-const express = require('express');
-const mongoose = require('mongoose');
-const cors = require('cors');
-const rateLimit = require('express-rate-limit');
+// server.js
+const express       = require('express');
+const mongoose      = require('mongoose');
+const cors          = require('cors');
+const rateLimit     = require('express-rate-limit');
 require('dotenv').config();
 
-const app = express();
-const PORT = process.env.PORT || 5000;
+const app             = express();
+const PORT            = process.env.PORT || 5000;
+
+// match client’s threshold (m/s)
+const SPEED_THRESHOLD = 1;
 
 app.use(cors());
 app.use(express.json());
@@ -14,15 +18,15 @@ app.use(express.json());
 const calculateDistance = (c1, c2) => {
   const R = 6378137;
   const toRad = d => (d * Math.PI) / 180;
-    const dLat = toRad(c2.latitude - c1.latitude);
-    const dLon = toRad(c2.longitude - c1.longitude);
-    const lat1 = toRad(c1.latitude);
-    const lat2 = toRad(c2.latitude);
-    const a =
-      Math.sin(dLat / 2) ** 2 +
-      Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLon / 2) ** 2;
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-    return R * c;
+  const dLat = toRad(c2.latitude - c1.latitude);
+  const dLon = toRad(c2.longitude - c1.longitude);
+  const lat1 = toRad(c1.latitude);
+  const lat2 = toRad(c2.latitude);
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLon / 2) ** 2;
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c;
 };
 
 const calculateBearing = (c1, c2) => {
@@ -44,11 +48,20 @@ const lowPassFilter = (curr, prev, alpha = 0.3) => {
   return alpha * curr + (1 - alpha) * prev;
 };
 
-// Rate limiter for /location
+// === Rate limiter for /location ===
+// limits each IP to max requests per windowMs
+// original 15 min limiter:
 const locationLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 min
-  max: 300,
+  windowMs: 60 * 60 * 1000,  // 1 hour = 60 min × 60 s × 1000 ms
+  max: 1200,            // limit each IP to 300 requests per window
 });
+
+// if you want a 1-hour window instead:
+// const locationLimiter = rateLimit({
+//   windowMs: 60 * 60 * 1000, // 1 hour = 60 min × 60 s × 1000 ms
+//   max: 1200,                // e.g. 1200 requests per hour
+// });
+
 
 // === Mongoose setup ===
 mongoose
@@ -65,36 +78,32 @@ mongoose
 // Bus schema/model
 const busSchema = new mongoose.Schema({
   busNumber: { type: String, required: true, unique: true },
-  assigned: { type: Boolean, default: false },
-  deviceId: { type: Number, default: null },
-  username: { type: String, default: null },
+  assigned:  { type: Boolean, default: false },
+  deviceId:  { type: Number, default: null },
+  username:  { type: String, default: null },
 });
 const Bus = mongoose.model('Bus', busSchema);
 
 // Location schema/model
 const locationSchema = new mongoose.Schema({
-  busNumber: { type: String, required: true },
-  deviceId: { type: Number, required: true },
-  latitude: { type: Number, required: true },
-  longitude: { type: Number, required: true },
-  altitude: { type: Number, default: 0 },
-  accuracy: { type: Number, default: 5 },
-  speed: { type: Number, default: 0 },
-  heading: { type: Number, default: 0 },
-  status: { type: String, enum: ['moving', 'stopped'], default: 'stopped' },
-  timestamp: { type: String, required: true },
-  trip_id: { type: String, default: '' },
-  route_id: { type: String, default: '' },
-  direction_id: { type: Number, enum: [0, 1], default: 0 },
-  occupancy_status: {
-    type: String,
-    enum: [
-      'EMPTY', 'MANY_SEATS_AVAILABLE', 'FEW_SEATS_AVAILABLE',
-      'STANDING_ROOM_ONLY', 'CRUSHED_STANDING_ROOM_ONLY',
-      'FULL', 'NOT_ACCEPTING_PASSENGERS', 'NO_DATA_AVAILABLE'
-    ],
-    default: 'NO_DATA_AVAILABLE'
-  },
+  busNumber:            { type: String, required: true },
+  deviceId:             { type: Number, required: true },
+  latitude:             { type: Number, required: true },
+  longitude:            { type: Number, required: true },
+  altitude:             { type: Number, default: 0 },
+  accuracy:             { type: Number, default: 5 },
+  speed:                { type: Number, default: 0 },
+  heading:              { type: Number, default: 0 },
+  status:               { type: String, enum: ['moving','stopped'], default: 'stopped' },
+  timestamp:            { type: String, required: true },
+  trip_id:              { type: String, default: '' },
+  route_id:             { type: String, default: '' },
+  direction_id:         { type: Number, enum: [0,1], default: 0 },
+  occupancy_status:     { type: String, enum: [
+                            'EMPTY','MANY_SEATS_AVAILABLE','FEW_SEATS_AVAILABLE',
+                            'STANDING_ROOM_ONLY','CRUSHED_STANDING_ROOM_ONLY',
+                            'FULL','NOT_ACCEPTING_PASSENGERS','NO_DATA_AVAILABLE'
+                          ], default: 'NO_DATA_AVAILABLE' },
   occupancy_percentage: { type: Number, default: 0 }
 });
 locationSchema.index({ busNumber: 1 });
@@ -103,17 +112,17 @@ const Location = mongoose.model('Location', locationSchema);
 
 // Seed function
 const initialBusNumbers = [
-  "MH08AA1234", "MH08BB5678", "MH08CC9012", "MH08DD3456", "MH08EE7890",
-  "MH08FF1122", "MH08GG3344", "MH08HH5566", "MH08II7788", "MH08JJ9900"
+  "MH08AA1234","MH08BB5678","MH08CC9012","MH08DD3456","MH08EE7890",
+  "MH08FF1122","MH08GG3344","MH08HH5566","MH08II7788","MH08JJ9900"
 ];
 async function seedBusNumbers() {
   try {
     const count = await Bus.countDocuments();
     if (count === 0) {
-      await Bus.insertMany(initialBusNumbers.map(n => ({ busNumber: n })));
+      await Bus.insertMany(initialBusNumbers.map(n=>({busNumber:n})));
       console.log("Seeded bus numbers");
     }
-  } catch (e) {
+  } catch(e) {
     console.error("Seeding error:", e);
   }
 }
@@ -124,28 +133,31 @@ const processLocationData = async (req, res, next) => {
     const { busNumber, latitude, longitude, altitude = 0, timestamp } = req.body;
     const prev = await Location.findOne({ busNumber }).sort({ timestamp: -1 }).limit(1);
     if (prev) {
-      // time diff in seconds
       const dt = (new Date(timestamp) - new Date(prev.timestamp)) / 1000;
       if (dt > 0) {
-        // 2D ground distance (m)
         const dist2d = calculateDistance(
           { latitude: prev.latitude, longitude: prev.longitude },
           { latitude, longitude }
         );
-        // 3D distance including altitude change
         const altDiff = altitude - prev.altitude;
-        const dist3d = Math.sqrt(dist2d * dist2d + altDiff * altDiff);
+        const dist3d = Math.sqrt(dist2d*dist2d + altDiff*altDiff);
 
-        // compute raw speed (m/s) and bearing
         const rawSpeed   = dist3d / dt;
         const rawBearing = calculateBearing(
           { latitude: prev.latitude, longitude: prev.longitude },
           { latitude, longitude }
         );
 
-        // low-pass filter both
-        req.body.speed   = lowPassFilter(rawSpeed,   prev.speed);
-        req.body.heading = lowPassFilter(rawBearing, prev.heading);
+        let filtSpeed   = lowPassFilter(rawSpeed,   prev.speed);
+        let filtHeading = lowPassFilter(rawBearing, prev.heading);
+
+        // freeze heading when below threshold
+        if (filtSpeed <= SPEED_THRESHOLD) {
+          filtHeading = prev.heading;
+        }
+
+        req.body.speed   = filtSpeed;
+        req.body.heading = filtHeading;
       }
     }
     next();
@@ -161,7 +173,7 @@ const processLocationData = async (req, res, next) => {
 app.get('/api/busNumbers', async (req, res) => {
   try {
     const buses = await Bus.find({ assigned: false });
-    res.json(buses.map(b => b.busNumber));
+    res.json(buses.map(b=>b.busNumber));
   } catch (e) {
     console.error(e);
     res.status(500).json({ message: 'Error fetching bus numbers' });
@@ -174,15 +186,15 @@ app.post('/api/register', async (req, res) => {
   if (!username || !busNumber) return res.status(400).json({ message: 'Username and busNumber are required' });
   try {
     const bus = await Bus.findOne({ busNumber });
-    if (!bus) return res.status(400).json({ message: 'Bus not found' });
-    if (bus.assigned) return res.status(400).json({ message: 'Bus already assigned' });
+    if (!bus)           return res.status(400).json({ message: 'Bus not found' });
+    if (bus.assigned)   return res.status(400).json({ message: 'Bus already assigned' });
 
     const assigned = await Bus.find({ assigned: true }).distinct('deviceId');
-    const freeIds = Array.from({ length: 100 }, (_, i) => i+1).filter(i => !assigned.includes(i));
+    const freeIds  = Array.from({length:100},(_,i)=>i+1).filter(i=>!assigned.includes(i));
     if (!freeIds.length) return res.status(400).json({ message: 'No device IDs left' });
 
     bus.assigned = true;
-    bus.deviceId = freeIds[Math.floor(Math.random() * freeIds.length)];
+    bus.deviceId = freeIds[Math.floor(Math.random()*freeIds.length)];
     bus.username = username;
     await bus.save();
     res.json({ username, busNumber, deviceId: bus.deviceId });
@@ -207,22 +219,27 @@ app.post('/api/login', async (req, res) => {
 });
 
 // Receive location updates
-app.post('/api/location', locationLimiter, processLocationData, async (req, res) => {
-  const { busNumber, deviceId, latitude, longitude, altitude, accuracy, speed, heading, status, timestamp } = req.body;
-  try {
-    const loc = await Location.findOneAndUpdate(
-      { busNumber },
-      { busNumber, deviceId, latitude, longitude, altitude, accuracy, speed, heading, status, timestamp },
-      { upsert: true, new: true }
-    );
-    res.json({ message: 'Location updated', location: loc });
-  } catch (e) {
-    console.error(e);
-    res.status(500).json({ message: 'Failed to update location' });
+app.post(
+  '/api/location',
+  locationLimiter,
+  processLocationData,
+  async (req, res) => {
+    const { busNumber, deviceId, latitude, longitude, altitude, accuracy, speed, heading, status, timestamp } = req.body;
+    try {
+      const loc = await Location.findOneAndUpdate(
+        { busNumber },
+        { busNumber, deviceId, latitude, longitude, altitude, accuracy, speed, heading, status, timestamp },
+        { upsert: true, new: true }
+      );
+      res.json({ message: 'Location updated', location: loc });
+    } catch (e) {
+      console.error(e);
+      res.status(500).json({ message: 'Failed to update location' });
+    }
   }
-});
+);
 
-// Start
+// Start server
 app.listen(PORT, () => {
   console.log(`Server running at http://localhost:${PORT}`);
 });
