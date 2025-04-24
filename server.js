@@ -100,7 +100,54 @@ seedBusNumbers();
 
 // --- API Routes ---
 // ... (busNumbers, register, login as before) ...
+// Get unassigned buses
+app.get('/api/busNumbers', async (req, res) => {
+  try {
+    const buses = await Bus.find({ assigned: false });
+    res.json(buses.map(b => b.busNumber));
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ message: 'Error fetching bus numbers' });
+  }
+});
 
+// Register user to bus
+app.post('/api/register', async (req, res) => {
+  const { username, busNumber } = req.body;
+  if (!username || !busNumber) return res.status(400).json({ message: 'Username and busNumber are required' });
+  try {
+    const bus = await Bus.findOne({ busNumber });
+    if (!bus)           return res.status(400).json({ message: 'Bus not found' });
+    if (bus.assigned)   return res.status(400).json({ message: 'Bus already assigned' });
+
+    const assigned = await Bus.find({ assigned: true }).distinct('deviceId');
+    const freeIds  = Array.from({length:100},(_,i)=>i+1).filter(i=>!assigned.includes(i));
+    if (!freeIds.length) return res.status(400).json({ message: 'No device IDs left' });
+
+    bus.assigned = true;
+    bus.deviceId = freeIds[Math.floor(Math.random()*freeIds.length)];
+    bus.username = username;
+    await bus.save();
+    res.json({ username, busNumber, deviceId: bus.deviceId });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ message: 'Registration failed.' });
+  }
+});
+
+// Login
+app.post('/api/login', async (req, res) => {
+  const { username } = req.body;
+  if (!username) return res.status(400).json({ message: 'Username is required' });
+  try {
+    const bus = await Bus.findOne({ username });
+    if (!bus?.assigned) return res.status(400).json({ message: 'No configuration found' });
+    res.json({ username, busNumber: bus.busNumber, deviceId: bus.deviceId });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ message: 'Login failed.' });
+  }
+});
 // Receive one live fix, maintain 3-window & recompute speed
 app.post(
   '/api/location',
