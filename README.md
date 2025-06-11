@@ -1,5 +1,5 @@
 
-```markdown
+
 # 🚍 E-Transit – GPS Device Backend
 
 This is the **Backend** part of the **GPS Device Tracking System**, built using the **MERN stack**, for the **E-Transit** web application.  
@@ -26,9 +26,9 @@ It receives GPS data and stores it in a MongoDB database, allowing real-time bus
 
 ---
 
-## 🛠️ Setup Instructions
+### 🛠️ Setup Instructions
 
-### 1. Clone the Repository
+## 1. Clone the Repository
 
 ```bash
 git clone https://github.com/your-username/gps-device-backend.git
@@ -50,4 +50,4 @@ nodemon server.js
 node server.js
 ```
 
-Server will run on: http://localhost:
+Server will run on: http://localhost:5000
