@@ -51,3 +51,8 @@ node server.js
 ```
 
 Server will run on: http://localhost:5000
+
+### 🛠️ Setup Instructions (Hosting)
+host using an render
+checkout yt and gpt for it ...it's not much complicated if u upload this readme file to gpt it is easy 
+
